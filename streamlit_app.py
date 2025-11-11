@@ -1,204 +1,192 @@
-#자신이 만든 레포지토리(저장소)에 streamlit_app.py 만들고 다음 내용 복붙해서 집어넣기
+# streamlit_app.py
+import os
+from io import BytesIO
 
+import numpy as np
 import streamlit as st
-import pandas as pd
+from PIL import Image, ImageOps
+from fastai.vision.all import *
+import gdown
 
-# --- 1. 페이지 기본 설정 ---
-st.set_page_config(
-    page_title="Streamlit 마법 교실",
-    page_icon="🔮",
-    layout="wide"
-)
+# ======================
+# 0) 페이지/스타일 설정
+# ======================
+st.set_page_config(page_title="Fastai 이미지 분류기 (스냅샷)", page_icon="🤖")
 
-# --- 2. 페이지 타이틀 ---
-st.title("Streamlit 마법 교실 🔮")
-st.subheader("HTML/CSS를 활용해 멋진 효과를 만들어 봐요!")
-st.markdown("---") # 구분선
-
-# --- 3. 모든 커스텀 CSS ---
-# st.markdown 내부에 <style> 태그를 사용하여 CSS를 전역으로 주입합니다.
-# 학생들에게 각 CSS 클래스가 어떤 효과를 주는지 설명하기 좋습니다.
 st.markdown("""
 <style>
-/* 섹션 1: 움직이는 그라데이션 텍스트
-  - background: 4가지 색상의 선형 그라데이션을 만듭니다.
-  - background-size: 배경을 4배 키워서 움직일 공간을 만듭니다.
-  - background-clip: text; : 배경을 텍스트 모양으로 잘라냅니다.
-  - text-fill-color: transparent; : 텍스트 색을 투명하게 만들어 배경 그라데이션이 보이게 합니다.
-  - animation: 'gradient' 애니메이션을 5초 동안 무한 반복합니다.
-*/
-@keyframes gradient {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
+h1 { color: #1E88E5; text-align: center; font-weight: bold; }
+.stFileUploader, .stCameraInput {
+  border: 2px dashed #1E88E5; border-radius: 10px; padding: 15px; background-color: #f5fafe;
 }
-
-.gradient-text {
-    font-size: 40px;
-    font-weight: bold;
-    background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
-    background-size: 400% 400%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: gradient 5s ease infinite;
-    text-align: center;
-    padding: 10px;
+.prediction-box {
+  background-color: #E3F2FD; border: 2px solid #1E88E5; border-radius: 10px;
+  padding: 25px; text-align: center; margin: 20px 0; box-shadow: 0 4px 10px rgba(0,0,0,0.1);
 }
-
-/* 섹션 2: 인터랙티브 카드 (마우스 호버)
-  - transition: 0.3초 동안 부드럽게 변하도록 설정합니다.
-  - box-shadow: 카드에 입체감을 주는 그림자입니다.
-  - :hover (가상 클래스): 마우스를 올렸을 때 적용될 스타일입니다.
-  - transform: scale(1.05); : 마우스를 올리면 1.05배 커집니다.
-*/
-.interactive-card {
-    background-color: #f0f8ff; /* AliceBlue */
-    border: 1px solid #d6eaff;
-    border-radius: 10px;
-    padding: 20px;
-    margin: 10px 0;
-    text-align: center;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+.prediction-box h2 { color: #0D47A1; margin: 0; font-size: 2.0rem; }
+.prob-card {
+  background-color: #FFFFFF; border-radius: 8px; padding: 15px; margin: 10px 0;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.08); transition: transform 0.2s ease;
 }
-
-.interactive-card:hover {
-    transform: scale(1.05);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
-    cursor: pointer;
+.prob-card:hover { transform: translateY(-3px); }
+.prob-label { font-weight: bold; font-size: 1.05rem; color: #333; }
+.prob-bar-bg { background-color: #E0E0E0; border-radius: 5px; width: 100%; height: 22px; overflow: hidden; }
+.prob-bar-fg {
+  background-color: #4CAF50; height: 100%; border-radius: 5px 0 0 5px; text-align: right;
+  padding-right: 8px; color: white; font-weight: bold; line-height: 22px; transition: width 0.5s ease-in-out;
 }
-
-/* 섹션 3: Flexbox를 이용한 카드 레이아웃
-  - display: flex; : 내부 아이템들을 가로로 정렬합니다.
-  - justify-content: space-around; : 아이템들 사이에 균등한 간격을 줍니다.
-  - flex-wrap: wrap; : 화면이 좁아지면 아이템이 다음 줄로 넘어갑니다. (반응형)
-*/
-.flex-container {
-    display: flex;
-    justify-content: space-around;
-    flex-wrap: wrap;
-    padding: 10px;
-    background-color: #fafafa;
-    border-radius: 10px;
-}
-
-.flex-card {
-    width: 30%;
-    min-width: 250px; /* 최소 너비 */
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    padding: 15px;
-    margin: 10px;
-    border-top: 5px solid #23a6d5; /* 상단에 포인트 컬러 */
-}
-
-/* 섹션 4: 애니메이션이 있는 버튼
-  - ::before (가상 요소): 버튼 뒤에 빛나는 효과를 위한 추가 레이어입니다.
-  - filter: blur(15px); : 빛이 번지는 효과를 줍니다.
-  - animation: 'glowing' 애니메이션을 20초 동안 선형으로 무한 반복합니다.
-*/
-@keyframes glowing {
-    0% { background-position: 0 0; }
-    50% { background-position: 400% 0; }
-    100% { background-position: 0 0; }
-}
-
-.glowing-button {
-    position: relative;
-    padding: 15px 30px;
-    font-size: 18px;
-    font-weight: bold;
-    color: white;
-    background-color: #313131;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    overflow: hidden; /* 가상 요소가 버튼 밖으로 나가지 않도록 */
-}
-
-.glowing-button::before {
-    content: '';
-    position: absolute;
-    top: -5px; left: -5px; right: -5px; bottom: -5px;
-    z-index: -1;
-    background: linear-gradient(90deg, #03a9f4, #f441a5, #ffeb3b, #03a9f4);
-    background-size: 400%;
-    border-radius: 15px;
-    filter: blur(15px);
-    animation: glowing 20s linear infinite;
-}
-
+.prob-bar-fg.highlight { background-color: #FF6F00; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. 섹션 1: 움직이는 그라데이션 텍스트 ---
-st.header("1. HTML/CSS: ✨ 움직이는 그라데이션 텍스트")
-st.markdown('<div class="gradient-text">이 텍스트는 CSS 애니메이션으로 움직여요!</div>', unsafe_allow_html=True)
+st.title("이미지 분류기 (Fastai) — 카메라 스냅샷/파일 업로드")
+
+# ======================
+# 1) 세션 상태 초기화
+# ======================
+if "img_bytes" not in st.session_state:
+    st.session_state.img_bytes = None
+
+# ======================
+# 2) 모델 로드 (Google Drive)
+# ======================
+# secrets.toml에 넣어두면 편리합니다. 없으면 기본값 사용
+FILE_ID = st.secrets.get("GDRIVE_FILE_ID", "1uj2lD8goJDLo9uSg_8HcT4bxnl2trPc8")
+MODEL_PATH = st.secrets.get("MODEL_PATH", "model.pkl")
+
+@st.cache_resource
+def load_model_from_drive(file_id: str, output_path: str):
+    if not os.path.exists(output_path):
+        url = f"https://drive.google.com/uc?id={file_id}"
+        gdown.download(url, output_path, quiet=False)
+    # CPU 강제 로드
+    learner = load_learner(output_path, cpu=True)
+    return learner
+
+with st.spinner("🤖 AI 모델을 불러오는 중입니다..."):
+    learner = load_model_from_drive(FILE_ID, MODEL_PATH)
+st.success("✅ 모델 로드 완료")
+
+labels = [str(x) for x in learner.dls.vocab]
+st.write(f"**분류 가능한 항목:** `{', '.join(labels)}`")
 st.markdown("---")
 
-# --- 5. 섹션 2: 인터랙티브 카드 (마우스 호버) ---
-st.header("2. HTML/CSS: 🖱️ 인터랙티브 카드 (마우스 올려보기)")
-st.markdown("""
-<div class="interactive-card">
-    <h3>마우스를 올려보세요!</h3>
-    <p><code>:hover</code> 가상 클래스와 <code>transform: scale()</code>을 사용하면<br>
-    이렇게 재미있는 효과를 만들 수 있습니다.</p>
-</div>
-""", unsafe_allow_html=True)
-st.markdown("---")
+# ======================
+# 3) 입력(카메라/업로드)
+# ======================
+tab_cam, tab_file = st.tabs(["📷 카메라로 촬영", "📁 파일 업로드"])
 
-# --- 6. 섹션 3: Flexbox를 이용한 카드 레이아웃 ---
-st.header("3. HTML/CSS: 🎨 Flexbox로 카드 정렬하기")
-st.markdown("""
-<div class="flex-container">
-    <div class="flex-card">
-        <h4>카드 1: HTML</h4>
-        <p>웹 페이지의 뼈대를 만듭니다. (<code>div</code>, <code>p</code>, <code>h4</code>...)</p>
-    </div>
-    <div class="flex-card">
-        <h4>카드 2: CSS</h4>
-        <p>웹 페이지를 예쁘게 꾸며줍니다. (<code>color</code>, <code>background</code>...)</p>
-    </div>
-    <div class="flex-card">
-        <h4>카드 3: Streamlit</h4>
-        <p>파이썬만으로 이 모든 것을 쉽게 만들 수 있게 해줍니다.</p>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-st.markdown("---")
+new_bytes = None
 
-# --- 7. 섹션 4: 애니메이션이 있는 버튼 ---
-st.header("4. HTML/CSS: 🚀 빛나는 애니메이션 버튼")
-st.markdown('<div style="text-align: center; padding: 20px;"><button class="glowing-button">✨ 마법 버튼 ✨</button></div>', unsafe_allow_html=True)
-st.markdown("---")
+with tab_cam:
+    st.write("카메라 권한을 허용한 뒤, 스냅샷을 촬영하세요.")
+    camera_photo = st.camera_input("카메라 스냅샷", label_visibility="collapsed")
+    if camera_photo is not None:
+        new_bytes = camera_photo.getvalue()
 
-# --- 8. 섹션 5: Streamlit 기본 기능 (데이터프레임) ---
-st.header("5. Streamlit 기본 기능: 📊 데이터프레임")
-st.write("Streamlit은 Pandas 데이터프레임을 표로 멋지게 보여줍니다.")
-df = pd.DataFrame({
-    "Name": ["Alice", "Bob", "Charlie"],
-    "Age": [24, 30, 29],
-    "Country": ["Korea", "USA", "UK"]
-})
-st.dataframe(df)
-st.markdown("---")
+with tab_file:
+    uploaded_file = st.file_uploader(
+        "이미지를 업로드하세요 (jpg, png, jpeg, webp, tiff)",
+        type=["jpg", "png", "jpeg", "webp", "tiff"]
+    )
+    if uploaded_file is not None:
+        new_bytes = uploaded_file.getvalue()
 
-# --- 9. 섹션 6: Streamlit 기본 기능 (이미지 및 비디오) ---
-st.header("6. Streamlit 기본 기능: 🖼️ 이미지와 🎬 비디오")
+# 리런에도 유지되도록 세션에 저장
+if new_bytes:
+    st.session_state.img_bytes = new_bytes
 
-# 컬럼을 사용해 좌우로 배치
-col1, col2 = st.columns(2)
+# ======================
+# 4) 전처리/유틸
+# ======================
+def load_pil_from_bytes(b: bytes) -> Image.Image:
+    """EXIF 회전 보정 + RGB 강제."""
+    pil = Image.open(BytesIO(b))
+    pil = ImageOps.exif_transpose(pil)
+    if pil.mode != "RGB":
+        pil = pil.convert("RGB")
+    return pil
 
-with col1:
-    st.write("이미지 표시 예제")
-    st.image("https://www.streamlit.io/images/brand/streamlit-logo-primary-colormark-darktext.png", caption="Streamlit 로고")
+# ======================
+# 5) 사이드바 옵션(선택)
+# ======================
+with st.sidebar:
+    st.header("설정")
+    resize_on = st.toggle("입력 리사이즈 사용", value=False, help="느리다면 켜서 속도를 개선하세요.")
+    target_size = st.slider("리사이즈 한 변 길이", min_value=128, max_value=1024, value=384, step=32)
+    st.caption("모델 파일은 최초 1회 다운로드 후 캐시됩니다.")
+    st.write(f"**모델 파일**: `{MODEL_PATH}`")
+    st.write(f"**Drive File ID**: `{FILE_ID}`")
 
-with col2:
-    st.write("유튜브 동영상 예제")
-    st.video("https://www.youtube.com/watch?v=B2iAodr0fOo")
+# ======================
+# 6) 예측 파이프라인
+# ======================
+if st.session_state.img_bytes:
+    col1, col2 = st.columns([1, 1], vertical_alignment="top")
 
-# --- 10. 마무리 ---
-st.markdown("---")
-st.subheader("모두 멋진 웹 앱을 만들어 보세요! 🚀")
-st.balloons() # 학생들을 위한 작은 이벤트!
+    # PIL 로드 + 선택적 리사이즈
+    try:
+        pil_img = load_pil_from_bytes(st.session_state.img_bytes)
+        if resize_on:
+            # 작은 변 기준 비율 유지 리사이즈(간단 구현: 정사각 리사이즈)
+            pil_img = pil_img.resize((target_size, target_size))
+    except Exception as e:
+        st.exception(e)
+        st.stop()
+
+    with col1:
+        st.image(pil_img, caption="입력 이미지", use_container_width=True)
+
+    # fastai 입력: numpy 배열 → PILImage.create
+    try:
+        fa_img = PILImage.create(np.array(pil_img))
+    except Exception as e:
+        st.exception(e)
+        st.stop()
+
+    with st.spinner("🧠 이미지를 분석 중입니다..."):
+        try:
+            prediction, pred_idx, probs = learner.predict(fa_img)
+        except Exception as e:
+            st.exception(e)
+            st.stop()
+
+    with col1:
+        st.markdown(
+            f"""
+            <div class="prediction-box">
+                <span style="font-size: 1.0rem; color: #555;">예측 결과:</span>
+                <h2>{prediction}</h2>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        st.markdown("<h3>상세 예측 확률:</h3>", unsafe_allow_html=True)
+
+        # 파이썬 float로 변환 후 내림차순 정렬
+        prob_list = sorted(
+            [(labels[i], float(probs[i])) for i in range(len(labels))],
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        for label, prob in prob_list:
+            highlight_class = "highlight" if label == str(prediction) else ""
+            prob_percent = prob * 100.0
+            st.markdown(
+                f"""
+                <div class="prob-card">
+                    <span class="prob-label">{label}</span>
+                    <div class="prob-bar-bg">
+                        <div class="prob-bar-fg {highlight_class}" style="width: {prob_percent:.4f}%;">
+                            {prob_percent:.2f}%
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+else:
+    st.info("카메라에서 스냅샷을 촬영하거나, 파일을 업로드하면 AI가 분석을 시작합니다.")
